@@ -83,8 +83,9 @@ CSV_HEADER = ["nelems", "P", "NDOF", "L2_error", "t_final"]
 
 
 def n_steps(dt, t_final):
-    """Compute number of time steps, rounding up."""
-    return max(1, int(round(t_final / dt)))
+    """Compute number of time steps, ceiling-based to guarantee t_final is reached."""
+    import math
+    return max(1, math.ceil(t_final / dt))
 
 
 def ndof(nelems, P):
@@ -198,13 +199,18 @@ def main():
     # ── Validate paths ──────────────────────────────────────────────────────
     script_dir = Path(__file__).parent
 
+    # Resolve the binary path relative to the script's own directory so the
+    # check and the subprocess invocation are consistent regardless of where
+    # the user's shell cwd happens to be.
+    horses_binary = str((script_dir / HORSES_BINARY).resolve())
+
     template_path = script_dir / TEMPLATE_FILE
     if not template_path.exists():
         print(f"ERROR: template not found: {template_path}")
         sys.exit(1)
 
-    if not args.dry_run and not os.path.exists(HORSES_BINARY):
-        print(f"ERROR: binary not found: {HORSES_BINARY}")
+    if not args.dry_run and not os.path.exists(horses_binary):
+        print(f"ERROR: binary not found: {horses_binary}")
         sys.exit(1)
 
     # ── Set up directories ──────────────────────────────────────────────────
@@ -217,7 +223,7 @@ def main():
 
     total = len(MESH_SIZES) * len(P_VALUES)
     print(f"MMS Convergence Study — Multiphase (MU)")
-    print(f"  Binary   : {HORSES_BINARY}")
+    print(f"  Binary   : {horses_binary}")
     print(f"  Meshes   : {MESH_SIZES}")
     print(f"  P values : {P_VALUES}")
     print(f"  dt       : {DT:.2e}   t_final : {T_FINAL}")
@@ -267,7 +273,7 @@ def main():
 
         # Run solver
         log_path = os.path.join(CONTROL_DIR, f"mms_N{N}_P{P}.log")
-        success, retcode = run_case(HORSES_BINARY, ctrl_path, run_dir, log_path)
+        success, retcode = run_case(horses_binary, ctrl_path, run_dir, log_path)
 
         if not success:
             print(f"FAILED (exit code {retcode}) — see {log_path}")

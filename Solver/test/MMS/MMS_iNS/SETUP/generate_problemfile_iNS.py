@@ -100,7 +100,21 @@ p   = to_sympy(p)
 
 # ── Simplification ─────────────────────────────────────────────────────────────
 
+_SIGALRM_AVAILABLE = hasattr(signal, 'SIGALRM')
+
 def _simp_timeout(expr):
+    """Run sp.simplify() with a wall-clock timeout.
+
+    On POSIX systems (Linux, macOS) SIGALRM is used for a hard timeout.
+    On Windows (and any platform that lacks SIGALRM) we fall back directly
+    to trigsimp so the script still runs correctly.
+    """
+    if not _SIGALRM_AVAILABLE:
+        # Windows / non-POSIX: SIGALRM is unavailable — use trigsimp directly.
+        print("  SIGALRM not available (Windows?) — using trigsimp directly",
+              file=sys.stderr)
+        return sp.trigsimp(sp.expand(expr))
+
     result = [None]
     def _handler(signum, frame): raise TimeoutError()
     try:
@@ -720,7 +734,7 @@ end module ProblemFileFunctions
 #ifdef INCNS
             t     = time
             ! rho_0: reference density 
-            rho_0 = {RHO0}
+            rho_0 = {RHO0}_RP
             ! mu: dynamic viscosity (isotropic, take first component)
             mu    = dimensionless_ % mu(1)
             ! c0_sq: artificial speed of sound squared (thermodynamics_ % rho0c02)
