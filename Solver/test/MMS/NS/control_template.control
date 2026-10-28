@@ -1,0 +1,61 @@
+!  MMS convergence test, compressible Navier-Stokes. run.py fills the {TOKENS}.
+!-------------------------- Configuration:-
+                          Mesh file name = {MESH_FILE}
+                      Solution file name = {SOLUTION_FILE}
+                                 Restart = .false.
+                       Restart file name = {SOLUTION_FILE}
+              Save gradients to solution = .false.
+!-------------------- Physical parameters:-
+                          Flow equations = "NS"
+                             Mach number = 0.3
+                         Reynolds number = 100000.0
+                               AOA theta = 0.0
+                                 AOA phi = 0.0
+!------------------------- Discretization:-
+                        Polynomial order = {P}
+                    Discretization nodes = Gauss-Lobatto
+                          Riemann solver = Matrix dissipation
+                 Inviscid discretization = Split-form
+                               Averaging = Chandrasekar
+                  Viscous discretization = BR1
+!----------------------- Time integration:-
+                        Time integration = Explicit
+                         Explicit method = RK3
+  Compute time derivative after timestep = .true.
+                         Simulation type = time-accurate
+                   Convergence tolerance = 1.0d-10
+                           Autosave mode = iteration
+                       Autosave interval = 99999999999
+                                      dt = {DT}
+                    Number of time steps = {N_STEPS}
+                         Output interval = {N_STEPS}
+!-------------------- Boundary conditions:-
+#define boundary Left
+   type = periodic
+   coupled boundary = Right
+#end
+
+#define boundary Right
+   type = periodic
+   coupled boundary = Left
+#end
+
+#define boundary Front
+   type = periodic
+   coupled boundary = Back
+#end
+
+#define boundary Back
+   type = periodic
+   coupled boundary = Front
+#end
+
+#define boundary bottom
+   type = periodic
+   coupled boundary = top
+#end
+
+#define boundary top
+   type = periodic
+   coupled boundary = bottom
+#end
