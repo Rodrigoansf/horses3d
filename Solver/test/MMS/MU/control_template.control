@@ -12,7 +12,7 @@
                 fluid 2 density (kg/m^3) = 2.0
                 fluid 1 viscosity (Pa.s) = 0.1
                 fluid 2 viscosity (Pa.s) = 0.1
-            chem characteristic time (s) = 100.0
+            chem characteristic time (s) = 2000.0
                      interface width (m) = 0.5
                  Interface tension (N/m) = 0.01
         fluid 1 sound speed square (m/s) = 1000.0

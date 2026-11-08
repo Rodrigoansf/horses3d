@@ -2,7 +2,7 @@
 """
 MMS convergence test for HORSES3D.
 
-    python3 run.py CASE [--P 2 3] [--meshes 4 8 16] [--set "Reynolds number = 100"] [--check]
+    python3 run.py CASE [--P 3 4 5 6] [--meshes 4 8 16] [--set "Reynolds number = 100"] [--check]
 
 Generates and builds <case>/SETUP/ProblemFile.f90, then runs the solver for
 every mesh and P with <case>/control_template.control, where run.py fills the
@@ -119,6 +119,25 @@ def run(case_dir, binary, lines, N, P, dt, t_final, keep):
     return [int(v[2])] + v[3:-1]
 
 
+def read_rows(path, header):
+    """Rows of an errors.csv written with this header; none if it does not exist or has another one."""
+    if not path.exists():
+        return []
+    with open(path) as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames != header:
+            return []
+        return [{k: v if k == "build" else int(v) if k in ("N", "P", "NDOF") else float(v) for k, v in r.items()}
+                for r in reader]
+
+
+def write_rows(path, header, rows):
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=header)
+        w.writeheader()
+        w.writerows(rows)
+
+
 def orders(rows, P):
     """Rows of one P sorted by mesh, each with the orders against the previous mesh."""
     rows = sorted((r for r in rows if r["P"] == P), key=lambda r: r["N"])
@@ -175,13 +194,15 @@ def check(case_dir, rows, failed, overridden):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("case", choices=[c for c in generate.CASES if (HERE / c).is_dir()])   # cases of this repository
-    ap.add_argument("--P", type=int, nargs="+", default=[2, 3], help="polynomial orders (default 2 3)")
-    ap.add_argument("--meshes", type=int, nargs="+", default=[4, 8], help="elements per side (default 4 8)")
+    ap.add_argument("--P", type=int, nargs="+", default=[3, 4, 5, 6], help="polynomial orders (default 3 4 5 6)")
+    ap.add_argument("--meshes", type=int, nargs="+", default=[4, 8, 16], help="elements per side (default 4 8 16)")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help="change a key of the control file; several pairs can be separated by ';'")
     ap.add_argument("--home", type=Path, default=HERE.parents[1], help="HORSES3D Solver directory")
     ap.add_argument("--check", action="store_true", help=f"fail on a failed run or a difference above {RTOL:g} with reference.csv")
     ap.add_argument("--keep", action="store_true", help="keep the solution files")
+    ap.add_argument("--merge", nargs="+", type=Path, metavar="CSV",
+                    help="do not run: merge these errors.csv files (e.g. of parallel jobs) and report")
     args = ap.parse_args()
 
     overrides = [tuple(s.strip() for s in pair.split("=", 1)) for item in args.set for pair in item.split(";") if pair.strip()]
@@ -189,6 +210,22 @@ def main():
         sys.exit("--set expects KEY=VALUE")
     _, solver, variables = generate.CASES[args.case]
     case_dir = HERE / args.case
+    lines = control(case_dir, overrides)
+    dt = value(lines, "dt")
+    t_final = dt * value(lines, "number of time steps")
+    title = f"dt = {dt:g}, t_final = {t_final:g}"
+    if overrides:
+        title += ", " + "; ".join(f"{k} = {v}" for k, v in overrides)
+    header = ["build", "N", "P", "dt", "t_final", "NDOF", "volume", "L2_total"] + [f"L2_{v}" for v in variables]
+    errors_csv = case_dir / "errors.csv"
+
+    if args.merge:
+        # One row per mesh and order, the last one if a pair was run more than once
+        rows = list({(r["N"], r["P"]): dict(r, build="merged") for f in args.merge for r in read_rows(f, header)}.values())
+        write_rows(errors_csv, header, rows)
+        report(args.case, [r for r in rows if r["P"] in args.P and r["N"] in args.meshes], args.P, title)
+        return
+
     home = args.home.resolve()
     binary = home / "bin" / f"horses3d.{solver}"
     if not binary.exists():
@@ -199,19 +236,7 @@ def main():
         h.update(f.read_bytes())
     h.update(repr(overrides).encode())
     build_id = h.hexdigest()[:12]
-    lines = control(case_dir, overrides)
-    dt = value(lines, "dt")
-    t_final = dt * value(lines, "number of time steps")
-
-    header = ["build", "N", "P", "dt", "t_final", "NDOF", "volume", "L2_total"] + [f"L2_{v}" for v in variables]
-    errors_csv = case_dir / "errors.csv"
-    rows = []
-    if errors_csv.exists():
-        with open(errors_csv) as f:
-            reader = csv.DictReader(f)
-            if reader.fieldnames == header:
-                rows = [{k: v if k == "build" else int(v) if k in ("N", "P", "NDOF") else float(v) for k, v in r.items()}
-                        for r in reader]
+    rows = read_rows(errors_csv, header)
 
     failed = []
     for P in args.P:
@@ -225,16 +250,10 @@ def main():
                 print(f"{args.case} N={N} P={P}: FAILED, see {case_dir}/CONTROL/N{N}_P{P}.log", flush=True)
                 continue
             rows.append(dict(zip(header, [build_id, N, P, dt, t_final] + result)))
-            with open(errors_csv, "w", newline="") as f:
-                w = csv.DictWriter(f, fieldnames=header)
-                w.writeheader()
-                w.writerows(rows)
+            write_rows(errors_csv, header, rows)
             print(f"{args.case} N={N} P={P}: L2 = {rows[-1]['L2_total']:.4e} ({time.time() - start:.0f} s)", flush=True)
 
     rows = [r for r in rows if r["build"] == build_id and r["P"] in args.P and r["N"] in args.meshes]
-    title = f"dt = {dt:g}, t_final = {t_final:g}"
-    if overrides:
-        title += ", " + "; ".join(f"{k} = {v}" for k, v in overrides)
     report(args.case, rows, args.P, title)
     if args.check and not check(case_dir, rows, failed, bool(overrides)):
         sys.exit(1)

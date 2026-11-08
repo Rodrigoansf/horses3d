@@ -2,7 +2,7 @@
 """
 Plot <case>/errors.csv into <case>/convergence.png.
 
-    python3 plot.py NS|iNS|MU
+    python3 plot.py CASE
 
 Left: error vs sqrt(NDOF) per mesh. Centre: error vs h = 1/N per P, with the
 least-squares slope (theory P+1). Right: error vs P per mesh.

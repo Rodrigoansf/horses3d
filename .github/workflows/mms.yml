@@ -1,7 +1,8 @@
 name: MMS convergence
 
 # Manufactured-solution convergence study, run by hand from the Actions tab.
-# See Solver/test/MMS/README.md.
+# See Solver/test/MMS/README.md. Each case and polynomial order runs in its own job,
+# so a sweep fits in the 6-hour limit of a job; a final job per case merges them.
 
 on:
   workflow_dispatch:
@@ -13,10 +14,10 @@ on:
         default: all
       P:
         description: Polynomial orders
-        default: "2 3"
+        default: "3 4 5 6"
       meshes:
         description: Elements per side of the cube meshes
-        default: "4 8"
+        default: "4 8 16"
       set:
         description: Control file changes, e.g. "Reynolds number = 100; Riemann solver = Roe"
         default: ""
@@ -25,19 +26,37 @@ on:
         type: boolean
         default: true
 
+env:
+  P: ${{ inputs.P }}
+  MESHES: ${{ inputs.meshes }}
+  SET: ${{ inputs.set }}
+
 jobs:
-  mms:
-    name: MMS ${{ matrix.case }}
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      cases: ${{ steps.lists.outputs.cases }}
+      orders: ${{ steps.lists.outputs.orders }}
+    steps:
+      - id: lists
+        env:
+          CASE: ${{ inputs.case }}
+        run: |
+          if [ "$CASE" = all ]; then cases="NS Euler NSSA iNS MU CAA"; else cases="$CASE"; fi
+          echo "cases=$(printf '"%s",' $cases | sed 's/^/[/; s/,$/]/')" >> "$GITHUB_OUTPUT"
+          echo "orders=$(printf '%s,' $P | sed 's/^/[/; s/,$/]/')" >> "$GITHUB_OUTPUT"
+
+  run:
+    name: MMS ${{ matrix.case }} P=${{ matrix.P }}
+    needs: setup
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        case: ${{ fromJSON(inputs.case == 'all' && '["NS", "Euler", "NSSA", "iNS", "MU", "CAA"]' || format('["{0}"]', inputs.case)) }}
+        case: ${{ fromJSON(needs.setup.outputs.cases) }}
+        P: ${{ fromJSON(needs.setup.outputs.orders) }}
     env:
       CASE: ${{ matrix.case }}
-      P: ${{ inputs.P }}
-      MESHES: ${{ inputs.meshes }}
-      SET: ${{ inputs.set }}
       CHECK: ${{ inputs.check }}
       OMP_NUM_THREADS: 4
     steps:
@@ -50,7 +69,7 @@ jobs:
       - name: Install Python packages
         run: |
           sudo apt-get update && sudo apt-get install -y libglu1-mesa
-          pip install sympy matplotlib gmsh
+          pip install sympy gmsh
 
       - name: Build HORSES3D
         working-directory: Solver
@@ -61,20 +80,55 @@ jobs:
 
       - name: Run
         run: |
-          args=(--P $P --meshes $MESHES)
+          args=(--P ${{ matrix.P }} --meshes $MESHES)
           if [ -n "$SET" ]; then args+=(--set "$SET"); fi
           if [ "$CHECK" = "true" ]; then args+=(--check); fi
           python3 Solver/test/MMS/run.py "$CASE" "${args[@]}"
 
-      - name: Plot
+      - uses: actions/upload-artifact@v4
         if: always()
-        run: python3 Solver/test/MMS/plot.py "$CASE"
+        with:
+          name: run-${{ matrix.case }}-P${{ matrix.P }}
+          path: |
+            Solver/test/MMS/${{ matrix.case }}/errors.csv
+            Solver/test/MMS/${{ matrix.case }}/CONTROL/
+
+  report:
+    name: MMS ${{ matrix.case }}
+    needs: [setup, run]
+    if: ${{ !cancelled() && needs.setup.result == 'success' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        case: ${{ fromJSON(needs.setup.outputs.cases) }}
+    env:
+      CASE: ${{ matrix.case }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python packages
+        run: pip install sympy matplotlib
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: run-${{ matrix.case }}-P*
+          path: runs
+
+      - name: Merge, report and plot
+        run: |
+          args=(--P $P --meshes $MESHES --merge runs/*/errors.csv)
+          if [ -n "$SET" ]; then args+=(--set "$SET"); fi
+          python3 Solver/test/MMS/run.py "$CASE" "${args[@]}"
+          python3 Solver/test/MMS/plot.py "$CASE"
+          cp Solver/test/MMS/$CASE/errors.csv Solver/test/MMS/$CASE/convergence.png runs/
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mms-${{ matrix.case }}
-          path: |
-            Solver/test/MMS/${{ matrix.case }}/errors.csv
-            Solver/test/MMS/${{ matrix.case }}/convergence.png
-            Solver/test/MMS/${{ matrix.case }}/CONTROL/
+          path: runs/

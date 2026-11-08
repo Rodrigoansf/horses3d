@@ -31,8 +31,8 @@
                    Convergence tolerance = 1.0e-10
                            Autosave mode = Iteration
                        Autosave interval = 999999999
-                                      dt = 1.0e-4
-                    Number of time steps = 1000
+                                      dt = 5.0e-5
+                    Number of time steps = 2000
                          Output interval = 1000
 !-------------------- Boundary conditions:-
 #define boundary Left
