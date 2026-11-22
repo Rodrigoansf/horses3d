@@ -87,6 +87,9 @@ jobs:
       MESHES: ${{ fromJSON(needs.setup.outputs.sweeps)[matrix.case].meshes }}
       CHECK: ${{ inputs.check }}
       OMP_NUM_THREADS: 4
+      COMPILER: ifort
+      MODE: RELEASE
+      INTEL_COMPILER_DIR: /opt/intel/oneapi/compiler/2023.2.0
     steps:
       - uses: actions/checkout@v7
 
@@ -100,13 +103,23 @@ jobs:
           sudo apt-get install -y -qq libglu1-mesa libgl1 libxcursor1 libxft2 libxinerama1 libfontconfig1
           pip install sympy==1.14.0 gmsh==4.15.2
 
+      - name: Install Intel oneAPI 2023.2.0 (ifort classic, as in CI_sequential 3.yml)
+        run: |
+          wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq intel-oneapi-compiler-fortran-2023.2.0 intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic-2023.2.0
+          source /opt/intel/oneapi/setvars.sh || true
+          printenv >> $GITHUB_ENV
+
       - name: Build HORSES3D
         working-directory: Solver
         run: |
           solver=$(python3 -c "import sys; sys.path.insert(0, 'test/MMS'); from generate import CASES; print(CASES['$CASE'][1])")
-          gfortran --version | head -1
+          ifort --version | head -1
+          grep -m1 'model name' /proc/cpuinfo
           ./configure
-          make $solver COMPILER=gfortran MODE=RELEASE COMM=SEQUENTIAL ENABLE_THREADS=YES WITH_MKL=NO
+          make $solver COMPILER=ifort MODE=$MODE COMM=SEQUENTIAL ENABLE_THREADS=YES WITH_MKL=NO INTEL_COMPILER_DIR=$INTEL_COMPILER_DIR
 
       - name: Run
         run: |
