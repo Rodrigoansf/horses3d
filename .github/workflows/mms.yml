@@ -87,6 +87,7 @@ jobs:
       MESHES: ${{ fromJSON(needs.setup.outputs.sweeps)[matrix.case].meshes }}
       CHECK: ${{ inputs.check }}
       OMP_NUM_THREADS: 4
+      EXTRA_FFLAGS: "-march=x86-64-v3"
     steps:
       - uses: actions/checkout@v7
 
