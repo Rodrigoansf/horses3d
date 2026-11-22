@@ -1,13 +1,13 @@
 name: build docs
 on:
   push:
-    branches: [master]
+    branches: [review5-docs]
 jobs:
 
   Build:
     runs-on: ${{ matrix.os }}
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -41,8 +41,10 @@ jobs:
     - name: Build documentation
       run: ford doc/ford-project-file.md
 
-    - name: Deploy Documentation
-      uses: JamesIves/github-pages-deploy-action@v4.4.1
-      with:
-        branch: gh-pages 
-        folder: doc/doc_output
+    - name: Check the new page
+      run: |
+        ls -la doc/doc_output/page/user_manual/ | head -40
+        f=$(grep -l "Verification with manufactured solutions" -r doc/doc_output/page/user_manual/ | head -5); echo "$f"
+        test -n "$f"
+        grep -o "s-verification[^\"]*" doc/doc_output/page/user_manual/index.html | sort -u
+        pip show ford | head -2
